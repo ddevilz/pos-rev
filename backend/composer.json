@@ -1,0 +1,45 @@
+{
+    "name": "lms/backend",
+    "description": "Laundry Management System Backend API",
+    "type": "project",
+    "require": {
+        "php": "^8.2",
+        "slim/slim": "^4.12",
+        "slim/psr7": "^1.6",
+        "doctrine/dbal": "^4.0",
+        "firebase/php-jwt": "^6.8",
+        "monolog/monolog": "^3.4",
+        "php-di/php-di": "^7.0",
+        "vlucas/phpdotenv": "^5.5",
+        "respect/validation": "^2.2",
+        "tuupola/cors-middleware": "^1.4"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.3",
+        "squizlabs/php_codesniffer": "^3.7"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "start": "php -S localhost:8000 -t public",
+        "migrate": "php migrations/migrate.php",
+        "test": [
+            "Composer\\Config::disableProcessTimeout",
+            "phpunit"
+        ],
+        "cs-check": "phpcs",
+        "cs-fix": "phpcbf"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    }
+}

@@ -1,0 +1,178 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Base theme setup for light mode */
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  
+  /* Radius */
+  --radius: 0.625rem;
+  
+  /* Light mode colors - improved palette */
+  --background: oklch(0.995 0 0); /* pure white */
+  --foreground: oklch(0.09 0 0); /* deep charcoal */
+  --card: oklch(1 0 0); /* bright white */
+  --card-foreground: oklch(0.09 0 0); /* deep charcoal */
+  --popover: oklch(1 0 0); /* bright white */
+  --popover-foreground: oklch(0.09 0 0); /* deep charcoal */
+  --primary: oklch(0.476 0.204 255.5); /* modern blue */
+  --primary-foreground: oklch(0.99 0 0); /* white */
+  --secondary: oklch(0.96 0.01 255.5); /* subtle blue-tinted background */
+  --secondary-foreground: oklch(0.22 0 0); /* dark gray */
+  --muted: oklch(0.95 0.01 255.5); /* light blue-tinted */
+  --muted-foreground: oklch(0.48 0.02 255.5); /* medium blue-gray */
+  --accent: oklch(0.94 0.02 255.5); /* accent blue-tinted */
+  --accent-foreground: oklch(0.22 0 0); /* dark text */
+  --destructive: oklch(0.55 0.22 15); /* modern red */
+  --destructive-foreground: oklch(0.99 0 0); /* white */
+  --border: oklch(0.89 0.01 255.5); /* subtle blue border */
+  --input: oklch(0.98 0.005 255.5); /* very light blue input */
+  --ring: oklch(0.476 0.204 255.5); /* primary blue ring */
+  
+  /* Chart colors */
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  
+  /* Sidebar colors */
+  --sidebar: oklch(0.985 0 0); /* light sidebar */
+  --sidebar-foreground: oklch(0.145 0 0); /* dark text */
+  --sidebar-primary: oklch(0.462 0.234 262.3); /* blue */
+  --sidebar-primary-foreground: oklch(0.985 0 0); /* white */
+  --sidebar-accent: oklch(0.97 0 0); /* light accent */
+  --sidebar-accent-foreground: oklch(0.205 0 0); /* dark text */
+  --sidebar-border: oklch(0.922 0 0); /* light border */
+  --sidebar-ring: oklch(0.462 0.234 262.3); /* blue ring */
+}
+
+/* Dark mode - applies when .dark class is present OR system preference is dark */
+.dark,
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --background: oklch(0.06 0 0); /* deep dark */
+    --foreground: oklch(0.95 0 0); /* bright white */
+    --card: oklch(0.11 0.01 255.5); /* dark card with subtle blue */
+    --card-foreground: oklch(0.95 0 0); /* bright white */
+    --popover: oklch(0.11 0.01 255.5); /* dark with subtle blue */
+    --popover-foreground: oklch(0.95 0 0); /* bright white */
+    --primary: oklch(0.58 0.18 255.5); /* vibrant blue */
+    --primary-foreground: oklch(0.06 0 0); /* dark text */
+    --secondary: oklch(0.15 0.01 255.5); /* dark secondary with blue tint */
+    --secondary-foreground: oklch(0.95 0 0); /* white */
+    --muted: oklch(0.15 0.01 255.5); /* dark muted with blue tint */
+    --muted-foreground: oklch(0.7 0.02 255.5); /* light blue-gray */
+    --accent: oklch(0.17 0.02 255.5); /* dark accent with blue */
+    --accent-foreground: oklch(0.95 0 0); /* white */
+    --destructive: oklch(0.65 0.2 15); /* bright red */
+    --destructive-foreground: oklch(0.95 0 0); /* white */
+    --border: oklch(0.2 0.01 255.5); /* dark border with blue tint */
+    --input: oklch(0.13 0.01 255.5); /* dark input */
+    --ring: oklch(0.58 0.18 255.5); /* vibrant blue ring */
+    
+    /* Chart colors for dark mode */
+    --chart-1: oklch(0.488 0.243 264.376);
+    --chart-2: oklch(0.696 0.17 162.48);
+    --chart-3: oklch(0.769 0.188 70.08);
+    --chart-4: oklch(0.627 0.265 303.9);
+    --chart-5: oklch(0.645 0.246 16.439);
+    
+    /* Sidebar colors for dark mode */
+    --sidebar: oklch(0.145 0 0); /* dark sidebar */
+    --sidebar-foreground: oklch(0.985 0 0); /* white text */
+    --sidebar-primary: oklch(0.608 0.234 262.3); /* lighter blue */
+    --sidebar-primary-foreground: oklch(0.089 0 0); /* dark text */
+    --sidebar-accent: oklch(0.205 0 0); /* dark accent */
+    --sidebar-accent-foreground: oklch(0.985 0 0); /* white text */
+    --sidebar-border: oklch(0.205 0 0); /* dark border */
+    --sidebar-ring: oklch(0.608 0.234 262.3); /* lighter blue ring */
+  }
+}
+
+/* Tailwind theme integration */
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/* Base styles */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  
+  html {
+    color-scheme: light dark;
+  }
+  
+  body {
+    @apply bg-background text-foreground min-h-screen;
+    margin: 0;
+    min-width: 320px;
+  }
+  
+  /* Reset conflicting styles */
+  a {
+    @apply text-primary hover:text-primary/80 transition-colors;
+    text-decoration: inherit;
+  }
+}
+
+/* Global component styles */
+@layer components {
+  .theme-transition {
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+  }
+}
+
+/* Ensure proper inheritance for dynamic themes */
+html.dark {
+  color-scheme: dark;
+}
+
+html.light {
+  color-scheme: light;
+}

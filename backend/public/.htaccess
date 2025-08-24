@@ -1,0 +1,26 @@
+# Slim 4 on Hostinger - public directory as document root
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Protect sensitive files
+  RewriteRule ^(.*/)?(\.env|composer\.(json|lock)|phpunit\.xml|\.git|\.github|vendor/.*) - [F,L,NC]
+
+  # Ensure Authorization header is passed to PHP (needed for JWT)
+  RewriteCond %{HTTP:Authorization} .
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+  # If the requested resource doesn't exist, route everything to index.php
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ index.php [QSA,L]
+</IfModule>
+
+# Security headers (optional; adjust as needed)
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "no-referrer-when-downgrade"
+  Header always set X-XSS-Protection "0"
+</IfModule>

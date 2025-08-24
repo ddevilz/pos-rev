@@ -1,0 +1,20 @@
+# Root .htaccess for Hostinger deployment
+# Routes API requests to backend, everything else to frontend
+
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  
+  # Route API requests to backend
+  RewriteRule ^api/(.*)$ /api/public/index.php [QSA,L]
+  
+  # Route auth requests to backend (since your routes start with /api/auth)
+  RewriteRule ^api$ /api/public/index.php [QSA,L]
+  
+  # For all other requests, serve frontend files
+  # If the requested file doesn't exist in frontend, serve index.html for SPA
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^.*$ /index.html [QSA,L]
+</IfModule>

@@ -1,0 +1,19 @@
+# Root .htaccess as a safeguard if document root is not set to public/
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Deny direct access to sensitive files
+  RewriteRule ^(.*/)?(\.env|composer\.(json|lock)|phpunit\.xml|\.git|\.github|src/.*|migrations/.*|tests/.*|vendor/.*) - [F,L,NC]
+
+  # Ensure Authorization header is passed to PHP (needed for JWT)
+  RewriteCond %{HTTP:Authorization} .
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+  # If someone hits this directory directly, route into public/index.php
+  RewriteCond %{REQUEST_URI} !^/public/
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ public/index.php [QSA,L]
+</IfModule>
