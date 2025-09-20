@@ -14,7 +14,7 @@ class ErrorMiddleware implements MiddlewareInterface
     {
         try {
             return $handler->handle($request);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $response = new \Slim\Psr7\Response();
             
             // Log error

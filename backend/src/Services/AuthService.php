@@ -18,9 +18,10 @@ class AuthService
     {
         $sql = "SELECT id, uuid, name, email, password_hash, role, is_active FROM users WHERE email = ? AND is_active = true";
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $email);
-        $result = $stmt->executeQuery();
-        $user = $result->fetchAssociative();
+        $stmt->bind_param("s", $email);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $user = $result->fetch_assoc();
 
         if (!$user || !password_verify($password, $user['password_hash'])) {
             return null;
@@ -29,8 +30,8 @@ class AuthService
         // Update last login
         $updateSql = "UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?";
         $updateStmt = $this->db->prepare($updateSql);
-        $updateStmt->bindValue(1, $user['id']);
-        $updateStmt->executeStatement();
+        $updateStmt->bind_param("i", $user['id']);
+        $updateStmt->execute();
 
         // Generate tokens
         $tokenPayload = [
@@ -63,26 +64,36 @@ class AuthService
         // Check if user already exists
         $checkSql = "SELECT id FROM users WHERE email = ?";
         $checkStmt = $this->db->prepare($checkSql);
-        $checkStmt->bindValue(1, $userData['email']);
-        $result = $checkStmt->executeQuery();
+        $checkStmt->bind_param("s", $userData['email']);
+        $checkStmt->execute();
+        $result = $checkStmt->get_result();
         
-        if ($result->fetchOne()) {
+        if ($result->fetch_assoc()) {
             throw new \Exception('User already exists with this email');
         }
 
         // Hash password
         $passwordHash = password_hash($userData['password'], PASSWORD_DEFAULT);
+        $role = $userData['role'] ?? 'user';
 
         // Insert new user
-        $sql = "INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?) RETURNING id, uuid, name, email, role";
+        $sql = "INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)";
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $userData['name']);
-        $stmt->bindValue(2, $userData['email']);
-        $stmt->bindValue(3, $passwordHash);
-        $stmt->bindValue(4, $userData['role'] ?? 'user');
+        $stmt->bind_param("ssss", $userData['name'], $userData['email'], $passwordHash, $role);
+        $stmt->execute();
         
-        $result = $stmt->executeQuery();
-        $user = $result->fetchAssociative();
+        if ($stmt->affected_rows === 0) {
+            throw new \Exception('Failed to create user');
+        }
+        
+        // Get the inserted user
+        $userId = $this->db->insert_id;
+        $selectSql = "SELECT id, uuid, name, email, role FROM users WHERE id = ?";
+        $selectStmt = $this->db->prepare($selectSql);
+        $selectStmt->bind_param("i", $userId);
+        $selectStmt->execute();
+        $result = $selectStmt->get_result();
+        $user = $result->fetch_assoc();
 
         if (!$user) {
             throw new \Exception('Failed to create user');
@@ -125,9 +136,10 @@ class AuthService
         // Verify user still exists and is active
         $sql = "SELECT id, uuid, name, email, role FROM users WHERE id = ? AND is_active = true";
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $payload['id']);
-        $result = $stmt->executeQuery();
-        $user = $result->fetchAssociative();
+        $stmt->bind_param("i", $payload['id']);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $user = $result->fetch_assoc();
 
         if (!$user) {
             return null;
@@ -163,9 +175,10 @@ class AuthService
     {
         $sql = "SELECT id, uuid, name, email, role, created_at FROM users WHERE id = ? AND is_active = true";
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $userId);
-        $result = $stmt->executeQuery();
+        $stmt->bind_param("i", $userId);
+        $stmt->execute();
+        $result = $stmt->get_result();
         
-        return $result->fetchAssociative() ?: null;
+        return $result->fetch_assoc() ?: null;
     }
 }

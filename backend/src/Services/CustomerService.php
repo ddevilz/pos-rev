@@ -20,6 +20,7 @@ class CustomerService
                 FROM customers";
         $conditions = [];
         $values = [];
+        $types = "";
 
         if (!empty($params['search'])) {
             $conditions[] = "(cname LIKE ? OR mobile LIKE ? OR email LIKE ?)";
@@ -27,26 +28,31 @@ class CustomerService
             $values[] = $search;
             $values[] = $search;
             $values[] = $search;
+            $types .= "sss";
         }
 
         if (!empty($params['rtype'])) {
             $conditions[] = "rtype = ?";
             $values[] = $params['rtype'];
+            $types .= "s";
         }
 
         if (isset($params['is_active'])) {
             $conditions[] = "is_active = ?";
             $values[] = $params['is_active'] === 'true';
+            $types .= "i";
         }
 
         if (!empty($params['city'])) {
             $conditions[] = "city LIKE ?";
             $values[] = '%' . $params['city'] . '%';
+            $types .= "s";
         }
 
         if (!empty($params['state'])) {
             $conditions[] = "state LIKE ?";
             $values[] = '%' . $params['state'] . '%';
+            $types .= "s";
         }
 
         if (!empty($conditions)) {
@@ -56,12 +62,20 @@ class CustomerService
         $sql .= " ORDER BY cname ASC";
 
         $stmt = $this->db->prepare($sql);
-        foreach ($values as $index => $value) {
-            $stmt->bindValue($index + 1, $value);
+        
+        if (!empty($values)) {
+            $stmt->bind_param($types, ...$values);
         }
-
-        $result = $stmt->executeQuery();
-        return $result->fetchAllAssociative();
+        
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        $customers = [];
+        while ($row = $result->fetch_assoc()) {
+            $customers[] = $row;
+        }
+        
+        return $customers;
     }
 
     public function getById(int $id): ?array
@@ -70,10 +84,11 @@ class CustomerService
                        rtype, is_active, total_orders, total_spent, created_at, updated_at 
                 FROM customers WHERE id = ?";
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $id);
-        $result = $stmt->executeQuery();
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $result = $stmt->get_result();
         
-        return $result->fetchAssociative() ?: null;
+        return $result->fetch_assoc() ?: null;
     }
 
     public function getStats(int $id): ?array
@@ -96,9 +111,10 @@ class CustomerService
                 WHERE customer_id = ? AND status != 'cancelled'";
         
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $id);
-        $result = $stmt->executeQuery();
-        $stats = $result->fetchAssociative();
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $stats = $result->fetch_assoc();
 
         // Update customer table with latest statistics
         $this->updateCustomerStats($id, $stats['total_orders'], $stats['total_spent']);
@@ -116,10 +132,11 @@ class CustomerService
         // Check if mobile already exists
         $checkSql = "SELECT id FROM customers WHERE mobile = ?";
         $checkStmt = $this->db->prepare($checkSql);
-        $checkStmt->bindValue(1, $data['mobile']);
-        $result = $checkStmt->executeQuery();
+        $checkStmt->bind_param("s", $data['mobile']);
+        $checkStmt->execute();
+        $result = $checkStmt->get_result();
         
-        if ($result->fetchOne()) {
+        if ($result->fetch_assoc()) {
             throw new \Exception('Mobile number already exists');
         }
 
@@ -127,32 +144,56 @@ class CustomerService
         if (!empty($data['email'])) {
             $checkSql = "SELECT id FROM customers WHERE email = ?";
             $checkStmt = $this->db->prepare($checkSql);
-            $checkStmt->bindValue(1, $data['email']);
-            $result = $checkStmt->executeQuery();
+            $checkStmt->bind_param("s", $data['email']);
+            $checkStmt->execute();
+            $result = $checkStmt->get_result();
             
-            if ($result->fetchOne()) {
+            if ($result->fetch_assoc()) {
                 throw new \Exception('Email already exists');
             }
         }
 
         $sql = "INSERT INTO customers (cname, mobile, email, add1, add2, city, state, pincode, rtype) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) 
-                RETURNING id, uuid, cname, mobile, email, add1, add2, city, state, pincode, 
-                         rtype, is_active, total_orders, total_spent, created_at";
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $data['cname']);
-        $stmt->bindValue(2, $data['mobile']);
-        $stmt->bindValue(3, $data['email'] ?? null);
-        $stmt->bindValue(4, $data['add1'] ?? null);
-        $stmt->bindValue(5, $data['add2'] ?? null);
-        $stmt->bindValue(6, $data['city'] ?? null);
-        $stmt->bindValue(7, $data['state'] ?? null);
-        $stmt->bindValue(8, $data['pincode'] ?? null);
-        $stmt->bindValue(9, $data['rtype'] ?? 'regular');
+        $rtype = $data['rtype'] ?? 'regular';
+        $email = $data['email'] ?? null;
+        $add1 = $data['add1'] ?? null;
+        $add2 = $data['add2'] ?? null;
+        $city = $data['city'] ?? null;
+        $state = $data['state'] ?? null;
+        $pincode = $data['pincode'] ?? null;
+        $cname = $data['cname'];
+        $mobile = $data['mobile'];
+        $stmt->bind_param("sssssssss", 
+            $cname,
+            $mobile,
+            $email,
+            $add1,
+            $add2,
+            $city,
+            $state,
+            $pincode,
+            $rtype
+        );
         
-        $result = $stmt->executeQuery();
-        $customer = $result->fetchAssociative();
+        $stmt->execute();
+        
+        if ($stmt->affected_rows === 0) {
+            throw new \Exception('Failed to create customer');
+        }
+        
+        // Get the inserted customer
+        $customerId = $this->db->insert_id;
+        $selectSql = "SELECT id, uuid, cname, mobile, email, add1, add2, city, state, pincode, 
+                         rtype, is_active, total_orders, total_spent, created_at 
+                      FROM customers WHERE id = ?";
+        $selectStmt = $this->db->prepare($selectSql);
+        $selectStmt->bind_param("i", $customerId);
+        $selectStmt->execute();
+        $result = $selectStmt->get_result();
+        $customer = $result->fetch_assoc();
         
         if (!$customer) {
             throw new \Exception('Failed to create customer');
@@ -173,11 +214,11 @@ class CustomerService
         if (!empty($data['mobile']) && $data['mobile'] !== $existing['mobile']) {
             $checkSql = "SELECT id FROM customers WHERE mobile = ? AND id != ?";
             $checkStmt = $this->db->prepare($checkSql);
-            $checkStmt->bindValue(1, $data['mobile']);
-            $checkStmt->bindValue(2, $id);
-            $result = $checkStmt->executeQuery();
+            $checkStmt->bind_param("si", $data['mobile'], $id);
+            $checkStmt->execute();
+            $result = $checkStmt->get_result();
             
-            if ($result->fetchOne()) {
+            if ($result->fetch_assoc()) {
                 throw new \Exception('Mobile number already exists');
             }
         }
@@ -186,17 +227,18 @@ class CustomerService
         if (!empty($data['email']) && $data['email'] !== $existing['email']) {
             $checkSql = "SELECT id FROM customers WHERE email = ? AND id != ?";
             $checkStmt = $this->db->prepare($checkSql);
-            $checkStmt->bindValue(1, $data['email']);
-            $checkStmt->bindValue(2, $id);
-            $result = $checkStmt->executeQuery();
+            $checkStmt->bind_param("si", $data['email'], $id);
+            $checkStmt->execute();
+            $result = $checkStmt->get_result();
             
-            if ($result->fetchOne()) {
+            if ($result->fetch_assoc()) {
                 throw new \Exception('Email already exists');
             }
         }
 
         $fields = [];
         $values = [];
+        $types = "";
 
         $updateableFields = ['cname', 'mobile', 'email', 'add1', 'add2', 'city', 'state', 'pincode', 'rtype', 'is_active'];
 
@@ -204,6 +246,8 @@ class CustomerService
             if (array_key_exists($field, $data)) {
                 $fields[] = "$field = ?";
                 $values[] = $data[$field];
+                // Determine type (s for string, i for integer/boolean)
+                $types .= (is_bool($data[$field]) || ($field === 'is_active')) ? "i" : "s";
             }
         }
 
@@ -212,17 +256,27 @@ class CustomerService
         }
 
         $values[] = $id;
-        $sql = "UPDATE customers SET " . implode(", ", $fields) . " WHERE id = ? 
-                RETURNING id, uuid, cname, mobile, email, add1, add2, city, state, pincode, 
-                         rtype, is_active, total_orders, total_spent, created_at, updated_at";
+        $types .= "i";
+        $sql = "UPDATE customers SET " . implode(", ", $fields) . " WHERE id = ?";
 
         $stmt = $this->db->prepare($sql);
-        foreach ($values as $index => $value) {
-            $stmt->bindValue($index + 1, $value);
+        $stmt->bind_param($types, ...$values);
+        $stmt->execute();
+        
+        if ($stmt->affected_rows === 0) {
+            // No rows were updated, return existing
+            return $existing;
         }
-
-        $result = $stmt->executeQuery();
-        return $result->fetchAssociative() ?: null;
+        
+        // Fetch the updated record
+        $selectSql = "SELECT id, uuid, cname, mobile, email, add1, add2, city, state, pincode, 
+                         rtype, is_active, total_orders, total_spent, created_at, updated_at 
+                      FROM customers WHERE id = ?";
+        $selectStmt = $this->db->prepare($selectSql);
+        $selectStmt->bind_param("i", $id);
+        $selectStmt->execute();
+        $result = $selectStmt->get_result();
+        return $result->fetch_assoc() ?: null;
     }
 
     public function toggleStatus(int $id): ?array
@@ -234,35 +288,46 @@ class CustomerService
 
         $newStatus = !$existing['is_active'];
         
-        $sql = "UPDATE customers SET is_active = ? WHERE id = ? 
-                RETURNING id, uuid, cname, mobile, email, add1, add2, city, state, pincode, 
-                         rtype, is_active, total_orders, total_spent, created_at, updated_at";
-        
+        $sql = "UPDATE customers SET is_active = ? WHERE id = ?";
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $newStatus);
-        $stmt->bindValue(2, $id);
+        $stmt->bind_param("ii", $newStatus, $id);
+        $stmt->execute();
         
-        $result = $stmt->executeQuery();
-        return $result->fetchAssociative() ?: null;
+        if ($stmt->affected_rows === 0) {
+            return null;
+        }
+        
+        // Fetch the updated record
+        $selectSql = "SELECT id, uuid, cname, mobile, email, add1, add2, city, state, pincode, 
+                         rtype, is_active, total_orders, total_spent, created_at, updated_at 
+                      FROM customers WHERE id = ?";
+        $selectStmt = $this->db->prepare($selectSql);
+        $selectStmt->bind_param("i", $id);
+        $selectStmt->execute();
+        $result = $selectStmt->get_result();
+        return $result->fetch_assoc() ?: null;
     }
 
     public function delete(int $id): bool
     {
         // Check if customer has orders
-        $checkSql = "SELECT COUNT(*) FROM orders WHERE customer_id = ?";
+        $checkSql = "SELECT COUNT(*) as count FROM orders WHERE customer_id = ?";
         $checkStmt = $this->db->prepare($checkSql);
-        $checkStmt->bindValue(1, $id);
-        $result = $checkStmt->executeQuery();
+        $checkStmt->bind_param("i", $id);
+        $checkStmt->execute();
+        $result = $checkStmt->get_result();
+        $row = $result->fetch_assoc();
         
-        if ($result->fetchOne() > 0) {
+        if ($row['count'] > 0) {
             throw new \Exception('Cannot delete customer that has orders. Deactivate instead.');
         }
 
         $sql = "DELETE FROM customers WHERE id = ?";
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $id);
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
         
-        return $stmt->executeStatement() > 0;
+        return $stmt->affected_rows > 0;
     }
 
     public function search(string $query): array
@@ -276,21 +341,23 @@ class CustomerService
         
         $searchTerm = '%' . $query . '%';
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $searchTerm);
-        $stmt->bindValue(2, $searchTerm);
-        $stmt->bindValue(3, $searchTerm);
+        $stmt->bind_param("sss", $searchTerm, $searchTerm, $searchTerm);
+        $stmt->execute();
+        $result = $stmt->get_result();
         
-        $result = $stmt->executeQuery();
-        return $result->fetchAllAssociative();
+        $customers = [];
+        while ($row = $result->fetch_assoc()) {
+            $customers[] = $row;
+        }
+        
+        return $customers;
     }
 
     private function updateCustomerStats(int $customerId, int $totalOrders, float $totalSpent): void
     {
         $sql = "UPDATE customers SET total_orders = ?, total_spent = ? WHERE id = ?";
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $totalOrders);
-        $stmt->bindValue(2, $totalSpent);
-        $stmt->bindValue(3, $customerId);
-        $stmt->executeStatement();
+        $stmt->bind_param("idi", $totalOrders, $totalSpent, $customerId);
+        $stmt->execute();
     }
 }

@@ -26,6 +26,7 @@ class OrderService
         
         $conditions = [];
         $values = [];
+        $types = "";
 
         if (!empty($params['search'])) {
             $conditions[] = "(o.order_number LIKE ? OR c.cname LIKE ? OR c.mobile LIKE ?)";
@@ -33,41 +34,49 @@ class OrderService
             $values[] = $search;
             $values[] = $search;
             $values[] = $search;
+            $types .= "sss";
         }
 
         if (!empty($params['status'])) {
             $conditions[] = "o.status = ?";
             $values[] = $params['status'];
+            $types .= "s";
         }
 
         if (!empty($params['priority'])) {
             $conditions[] = "o.priority = ?";
             $values[] = $params['priority'];
+            $types .= "s";
         }
 
         if (!empty($params['payment_status'])) {
             $conditions[] = "o.payment_status = ?";
             $values[] = $params['payment_status'];
+            $types .= "s";
         }
 
         if (!empty($params['customer_id'])) {
             $conditions[] = "o.customer_id = ?";
             $values[] = $params['customer_id'];
+            $types .= "i";
         }
 
         if (!empty($params['from_date'])) {
             $conditions[] = "o.created_at >= ?";
             $values[] = $params['from_date'] . ' 00:00:00';
+            $types .= "s";
         }
 
         if (!empty($params['to_date'])) {
             $conditions[] = "o.created_at <= ?";
             $values[] = $params['to_date'] . ' 23:59:59';
+            $types .= "s";
         }
 
         if (!empty($params['due_date'])) {
             $conditions[] = "o.due_date = ?";
             $values[] = $params['due_date'];
+            $types .= "s";
         }
 
         if (!empty($conditions)) {
@@ -84,12 +93,18 @@ class OrderService
         }
 
         $stmt = $this->db->prepare($sql);
-        foreach ($values as $index => $value) {
-            $stmt->bindValue($index + 1, $value);
+        if (!empty($values)) {
+            $stmt->bind_param($types, ...$values);
         }
-
-        $result = $stmt->executeQuery();
-        return $result->fetchAllAssociative();
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        $orders = [];
+        while ($row = $result->fetch_assoc()) {
+            $orders[] = $row;
+        }
+        
+        return $orders;
     }
 
     public function getById(int $id): ?array
@@ -107,10 +122,11 @@ class OrderService
                 WHERE o.id = ?";
         
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $id);
-        $result = $stmt->executeQuery();
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $result = $stmt->get_result();
         
-        $order = $result->fetchAssociative();
+        $order = $result->fetch_assoc();
         if (!$order) {
             return null;
         }
@@ -125,17 +141,21 @@ class OrderService
                      ORDER BY oi.id";
         
         $itemsStmt = $this->db->prepare($itemsSql);
-        $itemsStmt->bindValue(1, $id);
-        $itemsResult = $itemsStmt->executeQuery();
+        $itemsStmt->bind_param("i", $id);
+        $itemsStmt->execute();
+        $itemsResult = $itemsStmt->get_result();
         
-        $order['items'] = $itemsResult->fetchAllAssociative();
+        $order['items'] = [];
+        while ($item = $itemsResult->fetch_assoc()) {
+            $order['items'][] = $item;
+        }
         
         return $order;
     }
 
     public function create(array $data): array
     {
-        $this->db->beginTransaction();
+        $this->db->begin_transaction();
         
         try {
             // Generate order number
@@ -150,43 +170,58 @@ class OrderService
                             delivery_date, priority, total_quantity, subtotal, discount_amount, 
                             discount_percentage, tax_amount, tax_percentage, total_amount, 
                             advance_paid, remaining_amount, payment_status, notes, created_by
-                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
-                         RETURNING id, uuid, order_number, customer_id, due_date, due_time, 
-                                  pickup_date, delivery_date, status, priority, total_quantity, 
-                                  subtotal, discount_amount, discount_percentage, tax_amount, 
-                                  tax_percentage, total_amount, advance_paid, remaining_amount, 
-                                  payment_status, notes, created_by, created_at, updated_at";
+                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             
             $orderStmt = $this->db->prepare($orderSql);
-            $orderStmt->bindValue(1, $orderNumber);
-            $orderStmt->bindValue(2, $data['customer_id']);
-            $orderStmt->bindValue(3, $data['due_date'] ?? null);
-            $orderStmt->bindValue(4, $data['due_time'] ?? null);
-            $orderStmt->bindValue(5, $data['pickup_date'] ?? null);
-            $orderStmt->bindValue(6, $data['delivery_date'] ?? null);
-            $orderStmt->bindValue(7, $data['priority'] ?? 'normal');
-            $orderStmt->bindValue(8, $calculations['total_quantity']);
-            $orderStmt->bindValue(9, $calculations['subtotal']);
-            $orderStmt->bindValue(10, $calculations['discount_amount']);
-            $orderStmt->bindValue(11, $data['discount_percentage'] ?? 0);
-            $orderStmt->bindValue(12, $calculations['tax_amount']);
-            $orderStmt->bindValue(13, $data['tax_percentage'] ?? 0);
-            $orderStmt->bindValue(14, $calculations['total_amount']);
-            $orderStmt->bindValue(15, $data['advance_paid'] ?? 0);
-            $orderStmt->bindValue(16, $calculations['remaining_amount']);
-            $orderStmt->bindValue(17, $this->determinePaymentStatus($calculations['total_amount'], $data['advance_paid'] ?? 0));
-            $orderStmt->bindValue(18, $data['notes'] ?? null);
-            $orderStmt->bindValue(19, $data['created_by']);
+            $priority = $data['priority'] ?? 'normal';
+            $dueDate = $data['due_date'] ?? null;
+            $dueTime = $data['due_time'] ?? null;
+            $pickupDate = $data['pickup_date'] ?? null;
+            $deliveryDate = $data['delivery_date'] ?? null;
+            $discountPercentage = $data['discount_percentage'] ?? 0;
+            $taxPercentage = $data['tax_percentage'] ?? 0;
+            $advancePaid = $data['advance_paid'] ?? 0;
+            $paymentStatus = $this->determinePaymentStatus($calculations['total_amount'], $advancePaid);
+            $notes = $data['notes'] ?? null;
+            $createdBy = $data['created_by'];
             
-            $result = $orderStmt->executeQuery();
-            $order = $result->fetchAssociative();
+            // Types mapping:
+            // 1:s order_number, 2:i customer_id, 3:s due_date, 4:s due_time, 5:s pickup_date, 6:s delivery_date,
+            // 7:s priority, 8:i total_quantity, 9:d subtotal, 10:d discount_amount, 11:d discount_percentage,
+            // 12:d tax_amount, 13:d tax_percentage, 14:d total_amount, 15:d advance_paid, 16:d remaining_amount,
+            // 17:s payment_status, 18:s notes, 19:i created_by
+            $orderStmt->bind_param("sisssssiddddddddssi", 
+                $orderNumber,
+                $data['customer_id'],
+                $dueDate,
+                $dueTime,
+                $pickupDate,
+                $deliveryDate,
+                $priority,
+                $calculations['total_quantity'],
+                $calculations['subtotal'],
+                $calculations['discount_amount'],
+                $discountPercentage,
+                $calculations['tax_amount'],
+                $taxPercentage,
+                $calculations['total_amount'],
+                $advancePaid,
+                $calculations['remaining_amount'],
+                $paymentStatus,
+                $notes,
+                $createdBy
+            );
             
-            if (!$order) {
+            $orderStmt->execute();
+            
+            if ($orderStmt->affected_rows === 0) {
                 throw new \Exception('Failed to create order');
             }
             
+            $orderId = $this->db->insert_id;
+            
             // Insert order items
-            $this->insertOrderItems($order['id'], $data['items']);
+            $this->insertOrderItems($orderId, $data['items']);
             
             // Update customer statistics
             $this->updateCustomerStats($data['customer_id']);
@@ -194,10 +229,10 @@ class OrderService
             $this->db->commit();
             
             // Return full order with items
-            return $this->getById($order['id']);
+            return $this->getById($orderId);
             
         } catch (\Exception $e) {
-            $this->db->rollBack();
+            $this->db->rollback();
             throw $e;
         }
     }
@@ -209,11 +244,12 @@ class OrderService
             return null;
         }
 
-        $this->db->beginTransaction();
+        $this->db->begin_transaction();
         
         try {
             $fields = [];
             $values = [];
+            $types = "";
 
             $updateableFields = [
                 'due_date', 'due_time', 'pickup_date', 'delivery_date', 
@@ -225,6 +261,12 @@ class OrderService
                 if (array_key_exists($field, $data)) {
                     $fields[] = "$field = ?";
                     $values[] = $data[$field];
+                    // Determine type (s for string, i for integer, d for double)
+                    if (in_array($field, ['discount_percentage', 'tax_percentage', 'advance_paid'])) {
+                        $types .= "d";
+                    } else {
+                        $types .= "s";
+                    }
                 }
             }
 
@@ -233,8 +275,8 @@ class OrderService
                 // Delete existing items
                 $deleteItemsSql = "DELETE FROM order_items WHERE order_id = ?";
                 $deleteStmt = $this->db->prepare($deleteItemsSql);
-                $deleteStmt->bindValue(1, $id);
-                $deleteStmt->executeStatement();
+                $deleteStmt->bind_param("i", $id);
+                $deleteStmt->execute();
                 
                 // Calculate new totals
                 $calculations = $this->calculateOrderTotals($data['items'], $data);
@@ -255,6 +297,10 @@ class OrderService
                 $fields[] = "payment_status = ?";
                 $values[] = $this->determinePaymentStatus($calculations['total_amount'], $data['advance_paid'] ?? $existing['advance_paid']);
                 
+                // Added fields types: total_quantity (i), subtotal (d), discount_amount (d), tax_amount (d),
+                // total_amount (d), remaining_amount (d), payment_status (s)
+                $types .= "iddddds";
+                
                 // Insert new items
                 $this->insertOrderItems($id, $data['items']);
             } else {
@@ -268,23 +314,28 @@ class OrderService
                     $values[] = $remainingAmount;
                     $fields[] = "payment_status = ?";
                     $values[] = $this->determinePaymentStatus($totalAmount, $advancePaid);
+                    
+                    $types .= "ds";
                 }
             }
 
             if (empty($fields)) {
-                $this->db->rollBack();
+                $this->db->rollback();
                 return $existing;
             }
 
             $values[] = $id;
+            $types .= "i";
             $sql = "UPDATE orders SET " . implode(", ", $fields) . " WHERE id = ?";
 
             $stmt = $this->db->prepare($sql);
-            foreach ($values as $index => $value) {
-                $stmt->bindValue($index + 1, $value);
+            $stmt->bind_param($types, ...$values);
+            $stmt->execute();
+            
+            if ($stmt->affected_rows === 0) {
+                $this->db->rollback();
+                return $existing;
             }
-
-            $stmt->executeStatement();
             
             // Update customer statistics
             $this->updateCustomerStats($existing['customer_id']);
@@ -294,7 +345,7 @@ class OrderService
             return $this->getById($id);
             
         } catch (\Exception $e) {
-            $this->db->rollBack();
+            $this->db->rollback();
             throw $e;
         }
     }
@@ -308,10 +359,12 @@ class OrderService
 
         $sql = "UPDATE orders SET status = ? WHERE id = ?";
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $status);
-        $stmt->bindValue(2, $id);
+        $stmt->bind_param("si", $status, $id);
+        $stmt->execute();
         
-        $stmt->executeStatement();
+        if ($stmt->affected_rows === 0) {
+            return null;
+        }
         
         return $this->getById($id);
     }
@@ -324,30 +377,33 @@ class OrderService
         }
 
         // Check if order has invoices
-        $checkSql = "SELECT COUNT(*) FROM invoices WHERE order_id = ?";
+        $checkSql = "SELECT COUNT(*) as count FROM invoices WHERE order_id = ?";
         $checkStmt = $this->db->prepare($checkSql);
-        $checkStmt->bindValue(1, $id);
-        $result = $checkStmt->executeQuery();
+        $checkStmt->bind_param("i", $id);
+        $checkStmt->execute();
+        $result = $checkStmt->get_result();
+        $row = $result->fetch_assoc();
         
-        if ($result->fetchOne() > 0) {
+        if ($row['count'] > 0) {
             throw new \Exception('Cannot delete order that has invoices. Cancel the order instead.');
         }
 
-        $this->db->beginTransaction();
+        $this->db->begin_transaction();
         
         try {
             // Delete order items first (cascade should handle this, but being explicit)
             $deleteItemsSql = "DELETE FROM order_items WHERE order_id = ?";
             $deleteItemsStmt = $this->db->prepare($deleteItemsSql);
-            $deleteItemsStmt->bindValue(1, $id);
-            $deleteItemsStmt->executeStatement();
+            $deleteItemsStmt->bind_param("i", $id);
+            $deleteItemsStmt->execute();
             
             // Delete order
             $sql = "DELETE FROM orders WHERE id = ?";
             $stmt = $this->db->prepare($sql);
-            $stmt->bindValue(1, $id);
+            $stmt->bind_param("i", $id);
+            $stmt->execute();
             
-            $result = $stmt->executeStatement() > 0;
+            $result = $stmt->affected_rows > 0;
             
             if ($result) {
                 // Update customer statistics
@@ -359,7 +415,7 @@ class OrderService
             return $result;
             
         } catch (\Exception $e) {
-            $this->db->rollBack();
+            $this->db->rollback();
             throw $e;
         }
     }
@@ -377,12 +433,16 @@ class OrderService
         
         $searchTerm = '%' . $query . '%';
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $searchTerm);
-        $stmt->bindValue(2, $searchTerm);
-        $stmt->bindValue(3, $searchTerm);
+        $stmt->bind_param("sss", $searchTerm, $searchTerm, $searchTerm);
+        $stmt->execute();
+        $result = $stmt->get_result();
         
-        $result = $stmt->executeQuery();
-        return $result->fetchAllAssociative();
+        $orders = [];
+        while ($row = $result->fetch_assoc()) {
+            $orders[] = $row;
+        }
+        
+        return $orders;
     }
 
     private function generateOrderNumber(): string
@@ -393,14 +453,15 @@ class OrderService
         
         // Get next sequence number for this month
         $sql = "SELECT COUNT(*) + 1 as next_seq FROM orders 
-                WHERE order_number LIKE ? AND EXTRACT(YEAR FROM created_at) = ? AND EXTRACT(MONTH FROM created_at) = ?";
+                WHERE order_number LIKE ? AND YEAR(created_at) = ? AND MONTH(created_at) = ?";
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $prefix . $year . $month . '%');
-        $stmt->bindValue(2, $year);
-        $stmt->bindValue(3, $month);
-        $result = $stmt->executeQuery();
+        $pattern = $prefix . $year . $month . '%';
+        $stmt->bind_param("sii", $pattern, $year, $month);
+        $stmt->execute();
+        $result = $stmt->get_result();
         
-        $nextSeq = $result->fetchOne();
+        $row = $result->fetch_assoc();
+        $nextSeq = $row['next_seq'];
         
         return $prefix . $year . $month . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
     }
@@ -445,21 +506,29 @@ class OrderService
             // Get service name
             $serviceSql = "SELECT iname FROM services WHERE id = ?";
             $serviceStmt = $this->db->prepare($serviceSql);
-            $serviceStmt->bindValue(1, $item['service_id']);
-            $serviceResult = $serviceStmt->executeQuery();
-            $serviceName = $serviceResult->fetchOne() ?: 'Unknown Service';
+            $serviceId = $item['service_id'];
+            $serviceStmt->bind_param("i", $serviceId);
+            $serviceStmt->execute();
+            $serviceResult = $serviceStmt->get_result();
+            $serviceRow = $serviceResult->fetch_assoc();
+            $serviceName = $serviceRow ? $serviceRow['iname'] : 'Unknown Service';
             
-            $amount = $item['quantity'] * $item['rate'];
+            $quantity = $item['quantity'];
+            $rate = $item['rate'];
+            $amount = $quantity * $rate;
+            $notes = $item['notes'] ?? null;
             
-            $stmt->bindValue(1, $orderId);
-            $stmt->bindValue(2, $item['service_id']);
-            $stmt->bindValue(3, $serviceName);
-            $stmt->bindValue(4, $item['quantity']);
-            $stmt->bindValue(5, $item['rate']);
-            $stmt->bindValue(6, $amount);
-            $stmt->bindValue(7, $item['notes'] ?? null);
+            $stmt->bind_param("iisidds", 
+                $orderId,
+                $serviceId,
+                $serviceName,
+                $quantity,
+                $rate,
+                $amount,
+                $notes
+            );
             
-            $stmt->executeStatement();
+            $stmt->execute();
         }
     }
 
@@ -488,9 +557,7 @@ class OrderService
                 WHERE id = ?";
         
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $customerId);
-        $stmt->bindValue(2, $customerId);
-        $stmt->bindValue(3, $customerId);
-        $stmt->executeStatement();
+        $stmt->bind_param("iii", $customerId, $customerId, $customerId);
+        $stmt->execute();
     }
 }

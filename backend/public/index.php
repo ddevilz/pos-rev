@@ -52,10 +52,10 @@ AppFactory::setContainer($container);
 // Create App
 $app = AppFactory::create();
 
-// Add middleware
+// Add middleware (order matters). Add Error first, then Cors last so Cors wraps responses.
 $app->addBodyParsingMiddleware();
-$app->add(new CorsMiddleware());
 $app->add(new ErrorMiddleware());
+$app->add(new CorsMiddleware());
 
 // Add routing middleware
 $app->addRoutingMiddleware();

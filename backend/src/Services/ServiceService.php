@@ -23,26 +23,31 @@ class ServiceService
         
         $conditions = [];
         $values = [];
+        $types = "";
 
         if (!empty($params['search'])) {
             $conditions[] = "(s.iname LIKE ? OR s.description LIKE ?)";
             $values[] = '%' . $params['search'] . '%';
             $values[] = '%' . $params['search'] . '%';
+            $types .= "ss";
         }
 
         if (!empty($params['category_id'])) {
             $conditions[] = "s.category_id = ?";
             $values[] = $params['category_id'];
+            $types .= "i";
         }
 
         if (!empty($params['itype'])) {
             $conditions[] = "s.itype = ?";
             $values[] = $params['itype'];
+            $types .= "s";
         }
 
         if (isset($params['is_active'])) {
             $conditions[] = "s.is_active = ?";
             $values[] = $params['is_active'] === 'true';
+            $types .= "i";
         }
 
         if (!empty($conditions)) {
@@ -52,12 +57,18 @@ class ServiceService
         $sql .= " ORDER BY s.iname ASC";
 
         $stmt = $this->db->prepare($sql);
-        foreach ($values as $index => $value) {
-            $stmt->bindValue($index + 1, $value);
+        if (!empty($values)) {
+            $stmt->bind_param($types, ...$values);
         }
-
-        $result = $stmt->executeQuery();
-        return $result->fetchAllAssociative();
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        $services = [];
+        while ($row = $result->fetch_assoc()) {
+            $services[] = $row;
+        }
+        
+        return $services;
     }
 
     public function getById(int $id): ?array
@@ -70,10 +81,11 @@ class ServiceService
                 WHERE s.id = ?";
         
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $id);
-        $result = $stmt->executeQuery();
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $result = $stmt->get_result();
         
-        return $result->fetchAssociative() ?: null;
+        return $result->fetch_assoc() ?: null;
     }
 
     public function getByCategory(int $categoryId): array
@@ -87,10 +99,16 @@ class ServiceService
                 ORDER BY s.iname ASC";
         
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $categoryId);
-        $result = $stmt->executeQuery();
+        $stmt->bind_param("i", $categoryId);
+        $stmt->execute();
+        $result = $stmt->get_result();
         
-        return $result->fetchAllAssociative();
+        $services = [];
+        while ($row = $result->fetch_assoc()) {
+            $services[] = $row;
+        }
+        
+        return $services;
     }
 
     public function create(array $data): array
@@ -99,10 +117,11 @@ class ServiceService
         if (!empty($data['ino'])) {
             $checkSql = "SELECT id FROM services WHERE ino = ?";
             $checkStmt = $this->db->prepare($checkSql);
-            $checkStmt->bindValue(1, $data['ino']);
-            $result = $checkStmt->executeQuery();
+            $checkStmt->bind_param("s", $data['ino']);
+            $checkStmt->execute();
+            $result = $checkStmt->get_result();
             
-            if ($result->fetchOne()) {
+            if ($result->fetch_assoc()) {
                 throw new \Exception('Service number already exists');
             }
         }
@@ -111,33 +130,64 @@ class ServiceService
         if (!empty($data['category_id'])) {
             $categorySql = "SELECT id FROM categories WHERE id = ? AND is_active = true";
             $categoryStmt = $this->db->prepare($categorySql);
-            $categoryStmt->bindValue(1, $data['category_id']);
-            $result = $categoryStmt->executeQuery();
+            $categoryStmt->bind_param("i", $data['category_id']);
+            $categoryStmt->execute();
+            $result = $categoryStmt->get_result();
             
-            if (!$result->fetchOne()) {
+            if (!$result->fetch_assoc()) {
                 throw new \Exception('Invalid category');
             }
         }
 
         $sql = "INSERT INTO services (ino, iname, description, category_id, rate1, rate2, rate3, rate4, rate5, itype, created_by) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
-                RETURNING id, uuid, ino, iname, description, category_id, rate1, rate2, rate3, rate4, rate5, itype, is_active, created_at";
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $data['ino'] ?? null);
-        $stmt->bindValue(2, $data['iname']);
-        $stmt->bindValue(3, $data['description'] ?? null);
-        $stmt->bindValue(4, $data['category_id'] ?? null);
-        $stmt->bindValue(5, $data['rate1'] ?? 0);
-        $stmt->bindValue(6, $data['rate2'] ?? 0);
-        $stmt->bindValue(7, $data['rate3'] ?? 0);
-        $stmt->bindValue(8, $data['rate4'] ?? 0);
-        $stmt->bindValue(9, $data['rate5'] ?? 0);
-        $stmt->bindValue(10, $data['itype'] ?? null);
-        $stmt->bindValue(11, $data['created_by'] ?? null);
+        // Types mapping: ino(s), iname(s), description(s), category_id(i), rate1(d), rate2(d), rate3(d), rate4(d), rate5(d), itype(s), created_by(i)
+        $ino = $data['ino'] ?? null;
+        $iname = $data['iname'];
+        $description = $data['description'] ?? null;
+        $categoryId = $data['category_id'] ?? null;
+        $rate1 = $data['rate1'] ?? 0;
+        $rate2 = $data['rate2'] ?? 0;
+        $rate3 = $data['rate3'] ?? 0;
+        $rate4 = $data['rate4'] ?? 0;
+        $rate5 = $data['rate5'] ?? 0;
+        $itype = $data['itype'] ?? null;
+        $createdBy = $data['created_by'] ?? null;
+        $stmt->bind_param("sssidddddsi", 
+            $ino,
+            $iname,
+            $description,
+            $categoryId,
+            $rate1,
+            $rate2,
+            $rate3,
+            $rate4,
+            $rate5,
+            $itype,
+            $createdBy
+        );
         
-        $result = $stmt->executeQuery();
-        $service = $result->fetchAssociative();
+        $stmt->execute();
+        
+        if ($stmt->affected_rows === 0) {
+            throw new \Exception('Failed to create service');
+        }
+        
+        // Get the inserted service
+        $serviceId = $this->db->insert_id;
+        $selectSql = "SELECT s.id, s.uuid, s.ino, s.iname, s.description, s.category_id, 
+                         s.rate1, s.rate2, s.rate3, s.rate4, s.rate5, s.itype, s.is_active,
+                         s.created_at, c.category as category_name
+                      FROM services s 
+                      LEFT JOIN categories c ON s.category_id = c.id 
+                      WHERE s.id = ?";
+        $selectStmt = $this->db->prepare($selectSql);
+        $selectStmt->bind_param("i", $serviceId);
+        $selectStmt->execute();
+        $result = $selectStmt->get_result();
+        $service = $result->fetch_assoc();
         
         if (!$service) {
             throw new \Exception('Failed to create service');
@@ -158,11 +208,11 @@ class ServiceService
         if (!empty($data['ino']) && $data['ino'] !== $existing['ino']) {
             $checkSql = "SELECT id FROM services WHERE ino = ? AND id != ?";
             $checkStmt = $this->db->prepare($checkSql);
-            $checkStmt->bindValue(1, $data['ino']);
-            $checkStmt->bindValue(2, $id);
-            $result = $checkStmt->executeQuery();
+            $checkStmt->bind_param("si", $data['ino'], $id);
+            $checkStmt->execute();
+            $result = $checkStmt->get_result();
             
-            if ($result->fetchOne()) {
+            if ($result->fetch_assoc()) {
                 throw new \Exception('Service number already exists');
             }
         }
@@ -171,16 +221,18 @@ class ServiceService
         if (!empty($data['category_id'])) {
             $categorySql = "SELECT id FROM categories WHERE id = ? AND is_active = true";
             $categoryStmt = $this->db->prepare($categorySql);
-            $categoryStmt->bindValue(1, $data['category_id']);
-            $result = $categoryStmt->executeQuery();
+            $categoryStmt->bind_param("i", $data['category_id']);
+            $categoryStmt->execute();
+            $result = $categoryStmt->get_result();
             
-            if (!$result->fetchOne()) {
+            if (!$result->fetch_assoc()) {
                 throw new \Exception('Invalid category');
             }
         }
 
         $fields = [];
         $values = [];
+        $types = "";
 
         $allowedFields = ['ino', 'iname', 'description', 'category_id', 'rate1', 'rate2', 'rate3', 'rate4', 'rate5', 'itype', 'is_active'];
         
@@ -188,6 +240,16 @@ class ServiceService
             if (array_key_exists($field, $data)) {
                 $fields[] = "$field = ?";
                 $values[] = $data[$field];
+                // Determine type (s for string, i for integer, d for double, b for boolean)
+                if (in_array($field, ['rate1', 'rate2', 'rate3', 'rate4', 'rate5'])) {
+                    $types .= "d";
+                } elseif (in_array($field, ['category_id'])) {
+                    $types .= "i";
+                } elseif ($field === 'is_active') {
+                    $types .= "i";
+                } else {
+                    $types .= "s";
+                }
             }
         }
 
@@ -196,34 +258,51 @@ class ServiceService
         }
 
         $values[] = $id;
-        $sql = "UPDATE services SET " . implode(", ", $fields) . " WHERE id = ? 
-                RETURNING id, uuid, ino, iname, description, category_id, rate1, rate2, rate3, rate4, rate5, itype, is_active, created_at, updated_at";
+        $types .= "i";
+        $sql = "UPDATE services SET " . implode(", ", $fields) . " WHERE id = ?";
 
         $stmt = $this->db->prepare($sql);
-        foreach ($values as $index => $value) {
-            $stmt->bindValue($index + 1, $value);
+        $stmt->bind_param($types, ...$values);
+        $stmt->execute();
+        
+        if ($stmt->affected_rows === 0) {
+            // No rows were updated, return existing
+            return $existing;
         }
-
-        $result = $stmt->executeQuery();
-        return $result->fetchAssociative() ?: null;
+        
+        // Fetch the updated record
+        $selectSql = "SELECT s.id, s.uuid, s.ino, s.iname, s.description, s.category_id, 
+                         s.rate1, s.rate2, s.rate3, s.rate4, s.rate5, s.itype, s.is_active,
+                         s.created_at, s.updated_at, c.category as category_name
+                      FROM services s 
+                      LEFT JOIN categories c ON s.category_id = c.id 
+                      WHERE s.id = ?";
+        $selectStmt = $this->db->prepare($selectSql);
+        $selectStmt->bind_param("i", $id);
+        $selectStmt->execute();
+        $result = $selectStmt->get_result();
+        return $result->fetch_assoc() ?: null;
     }
 
     public function delete(int $id): bool
     {
         // Check if service is used in orders
-        $checkSql = "SELECT COUNT(*) FROM order_items WHERE service_id = ?";
+        $checkSql = "SELECT COUNT(*) as count FROM order_items WHERE service_id = ?";
         $checkStmt = $this->db->prepare($checkSql);
-        $checkStmt->bindValue(1, $id);
-        $result = $checkStmt->executeQuery();
+        $checkStmt->bind_param("i", $id);
+        $checkStmt->execute();
+        $result = $checkStmt->get_result();
+        $row = $result->fetch_assoc();
         
-        if ($result->fetchOne() > 0) {
+        if ($row['count'] > 0) {
             throw new \Exception('Cannot delete service that is used in orders');
         }
 
         $sql = "DELETE FROM services WHERE id = ?";
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(1, $id);
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
         
-        return $stmt->executeStatement() > 0;
+        return $stmt->affected_rows > 0;
     }
 }
