@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -19,6 +19,9 @@ import { useCreateOrderMutation } from "@/store/api/orderApi";
 import { useCreateCustomerMutation } from "@/store/api/customerApi";
 import type { Customer, Service } from "@/types";
 import { User, Package } from "lucide-react";
+import OrderReceipt from "@/components/print/OrderReceipt";
+import { printElementById } from "@/lib/print";
+import type { Order as ApiOrder } from "@/types";
 
 // Order item type for the form
 interface OrderItem {
@@ -67,6 +70,7 @@ const NewOrderPage: React.FC = () => {
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("customer");
+  const [printOrder, setPrintOrder] = useState<ApiOrder | null>(null);
 
   const [createOrder] = useCreateOrderMutation();
   const [createCustomer] = useCreateCustomerMutation();
@@ -88,6 +92,33 @@ const NewOrderPage: React.FC = () => {
       items: [],
     },
   });
+
+  // Debug form errors
+  useEffect(() => {
+    if (Object.keys(form.formState.errors).length > 0) {
+      const errorMessages = Object.entries(form.formState.errors).map(([field, error]) => {
+        if (error && typeof error === 'object' && 'message' in error) {
+          return `${field}: ${error.message}`;
+        }
+        return field;
+      });
+
+      toast.error(`Form validation errors:\n${errorMessages.join('\n')}`);
+    }
+  }, [form.formState.errors]);
+
+  // Keep form items in sync with orderItems state
+  useEffect(() => {
+    const formItems = orderItems.map(item => ({
+      service_id: item.service_id,
+      service_name: item.service_name,
+      quantity: item.quantity,
+      rate: item.rate,
+      amount: item.amount,
+      notes: item.notes || undefined,
+    }));
+    form.setValue("items", formItems as any);
+  }, [orderItems, form]);
 
   // Calculate totals
   const calculateTotals = () => {
@@ -113,6 +144,27 @@ const NewOrderPage: React.FC = () => {
   };
 
   const totals = calculateTotals();
+
+  // When a new order is created, render receipt and auto-print once, then reset form/state
+  useEffect(() => {
+    if (!printOrder) return;
+    let cancelled = false;
+    const run = async () => {
+      // Wait for receipt to mount
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+      if (cancelled) return;
+      await printElementById("printable-receipt");
+
+      // After printing, reset everything
+      form.reset();
+      setSelectedCustomer(null);
+      setOrderItems([]);
+      setActiveTab("customer");
+      setPrintOrder(null);
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [printOrder]);
 
   // Handle customer selection/creation
   const handleCustomerSelect = (customer: Customer) => {
@@ -192,7 +244,7 @@ const NewOrderPage: React.FC = () => {
   // Handle form submission
   const onSubmit = async (data: OrderFormData) => {
     setLoading(true);
-    
+
     try {
       if (orderItems.length === 0) {
         toast.warning("Please add at least one service to the order.");
@@ -217,11 +269,9 @@ const NewOrderPage: React.FC = () => {
         service_id: item.service_id,
         quantity: item.quantity,
         rate: item.rate,
+        amount: item.amount,
         notes: item.notes || undefined,
       }));
-
-      // Update the form with current items
-      form.setValue("items", apiItems as any);
 
       // Prepare order data in the format expected by the API
       const orderData = {
@@ -238,12 +288,8 @@ const NewOrderPage: React.FC = () => {
       const result = await createOrder(orderData).unwrap();
       
       toast.success(`Order ${result.order_number} created successfully!`);
-      
-      // Reset form
-      form.reset();
-      setSelectedCustomer(null);
-      setOrderItems([]);
-      setActiveTab("customer");
+      // Set for printing; cleanup/reset happens after printing via useEffect
+      setPrintOrder(result as ApiOrder);
       
     } catch (error: any) {
       console.error("Order creation error:", error);
@@ -337,7 +383,9 @@ const NewOrderPage: React.FC = () => {
             </TabsList>
           </div>
 
-          <form onSubmit={form.handleSubmit(onSubmit)}>
+          <form onSubmit={form.handleSubmit(onSubmit, (errors) => {
+            console.log('🚫 Form validation failed before onSubmit:', errors);
+          })}>
             <TabsContent value="customer" className="space-y-6 mt-0">
               <Card className="shadow-sm border">
                 <CardHeader className="pb-4">
@@ -593,6 +641,12 @@ const NewOrderPage: React.FC = () => {
             </TabsContent>
           </form>
         </Tabs>
+        {/* Hidden print container for receipt */}
+        {printOrder && (
+          <div id="printable-receipt" className="print-area">
+            <OrderReceipt order={printOrder as any} />
+          </div>
+        )}
       </div>
     </div>
   );
